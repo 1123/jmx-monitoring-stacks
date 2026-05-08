@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-standalone-datasources
+  namespace: default
+data:
+  datasource.yaml: |-
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      url: http://prometheus-operated.default.svc.cluster.local:9090
+      access: proxy
+      isDefault: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-standalone-dashboards-provider
+  namespace: default
+data:
+  dashboards.yaml: |-
+    apiVersion: 1
+    providers:
+    - name: 'Confluent Dashboards'
+      orgId: 1
+      folder: ''
+      type: file
+      disableDeletion: false
+      editable: true
+      options:
+        path: /var/lib/grafana/dashboards
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-standalone
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana-standalone
+  template:
+    metadata:
+      labels:
+        app: grafana-standalone
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        ports:
+        - containerPort: 3000
+        env:
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "true"
+        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+          value: "Admin"
+        volumeMounts:
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+          readOnly: true
+        - name: dashboard-provider
+          mountPath: /etc/grafana/provisioning/dashboards
+          readOnly: true
+        - name: zk-dashboard
+          mountPath: /var/lib/grafana/dashboards/zk
+          readOnly: true
+        - name: kafka-dashboard
+          mountPath: /var/lib/grafana/dashboards/kafka
+          readOnly: true
+        - name: cl-dashboard
+          mountPath: /var/lib/grafana/dashboards/cl
+          readOnly: true
+      volumes:
+      - name: datasources
+        configMap:
+          name: grafana-standalone-datasources
+      - name: dashboard-provider
+        configMap:
+          name: grafana-standalone-dashboards-provider
+      - name: zk-dashboard
+        configMap:
+          name: grafana-zookeeper-cluster
+      - name: kafka-dashboard
+        configMap:
+          name: grafana-kafka-cluster
+      - name: cl-dashboard
+        configMap:
+          name: grafana-cluster-linking
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-standalone
+  namespace: default
+spec:
+  selector:
+    app: grafana-standalone
+  ports:
+  - port: 80
+    targetPort: 3000
+  type: ClusterIP
