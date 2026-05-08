@@ -78,6 +78,13 @@ spec:
       containers:
       - name: grafana
         image: grafana/grafana:latest
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
         ports:
         - containerPort: 3000
         env:
@@ -96,6 +103,13 @@ spec:
           mountPath: /tmp/dashboards
       - name: grafana-sc-dashboard
         image: kiwigrid/k8s-sidecar:latest
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 50m
+            memory: 64Mi
         env:
         - name: LABEL
           value: "grafana_dashboard"
