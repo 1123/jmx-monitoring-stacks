@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana-standalone
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: grafana-standalone-clusterrole
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "watch", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: grafana-standalone-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: grafana-standalone-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: grafana-standalone
+  namespace: default
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-standalone-datasources
+  namespace: default
+data:
+  datasource.yaml: |-
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      url: http://prometheus-operated.default.svc.cluster.local:9090
+      access: proxy
+      isDefault: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-standalone-dashboards-provider
+  namespace: default
+data:
+  dashboards.yaml: |-
+    apiVersion: 1
+    providers:
+    - name: 'Sidecar Dashboards'
+      orgId: 1
+      folder: ''
+      type: file
+      disableDeletion: false
+      editable: true
+      options:
+        path: /tmp/dashboards
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-standalone
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana-standalone
+  template:
+    metadata:
+      labels:
+        app: grafana-standalone
+    spec:
+      serviceAccountName: grafana-standalone
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "true"
+        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+          value: "Admin"
+        volumeMounts:
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+          readOnly: true
+        - name: dashboard-provider
+          mountPath: /etc/grafana/provisioning/dashboards
+          readOnly: true
+        - name: sc-dashboard-volume
+          mountPath: /tmp/dashboards
+      - name: grafana-sc-dashboard
+        image: kiwigrid/k8s-sidecar:latest
+        env:
+        - name: LABEL
+          value: "grafana_dashboard"
+        - name: FOLDER
+          value: "/tmp/dashboards"
+        - name: RESOURCE
+          value: "both"
+        - name: NAMESPACE
+          value: "ALL"
+        volumeMounts:
+        - name: sc-dashboard-volume
+          mountPath: /tmp/dashboards
+      volumes:
+      - name: datasources
+        configMap:
+          name: grafana-standalone-datasources
+      - name: dashboard-provider
+        configMap:
+          name: grafana-standalone-dashboards-provider
+      - name: sc-dashboard-volume
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-standalone
+  namespace: default
+spec:
+  selector:
+    app: grafana-standalone
+  ports:
+  - port: 80
+    targetPort: 3000
+  type: ClusterIP
